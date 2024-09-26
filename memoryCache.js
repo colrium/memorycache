@@ -2,7 +2,7 @@ const minutesToLive = 2;
 const DEFAULT_OPTS = {
 	ttl: minutesToLive * 60 * 1000,
 	fetch: true,
-	evictable: false
+	evictable: true
 };
 
 class ListNode {
@@ -82,9 +82,9 @@ class CacheEntry {
 
 /**
  * Memory cache implementation with LRU eviction policy
- * @extends Map
  */
-export default class MemoryCache extends Map {
+export default class MemoryCache {
+	#storage;
 	#head;
 	#tail;
 	#nodeMap;
@@ -93,12 +93,13 @@ export default class MemoryCache extends Map {
 	#misses;
 	static #instance;
 	static #id = Symbol("MemoryCache");
+	
 
 	constructor(id=Symbol()) {
 		if (MemoryCache.#instance && id !== MemoryCache.#id) {
             return MemoryCache.#instance;
         }
-		super();
+		this.#storage = new Map();
 		this.#limit = 100000;
 		this.#hits = 0;
 		this.#misses = 0;
@@ -107,197 +108,173 @@ export default class MemoryCache extends Map {
 		this.#head.next = this.#tail;
 		this.#tail.prev = this.#head;
 		this.#nodeMap = new Map(); // Map to store key-node pairs
+		
 	}
 
-
-
-	*entries() {
-		for (const [key, cacheEntry] of super.entries()) {
-			if (cacheEntry.isExpired() && cacheEntry.evictable) {
-				super.delete(key);
-			} else {
-				const node = new ListNode(key);
-				this.#nodeMap.set(key, node);
-				node.prev = this.#tail.prev;
-				node.next = this.#tail;
-				node.prev.next = node;
-				node.next.prev = node;
-				yield [key, cacheEntry.getData()];
-				
-			}
-		}
-	}
-	*keys() {
-		for ([key] of this.entries()) {
-			yield key;
-		}
-	}
-	*values() {
-		for ([, value] of this.entries()) {
-			yield value;
-		}
-	}
-
-	forEach(callback) {
-		for (const [key, value] of this.entries()) {
-			callback(value, key, this);
-		}
-	}
-
-	toObject() {
-		return Object.fromEntries(this.entries());
-	}
-
-	add(key, value, options = {}) {
-		if (!this.has(key)) {
-			this.set(key, value, options);
-		}
-		return this;
-	}
-
-	setLimit(limit) {
-		this.#limit = limit > 0 ? limit : this.#limit;
-		while (this.size > this.#limit) {
-			const lruKey = this.#head.next.key;
-			this.#delete(lruKey);
-		}
-		return this;
-	}
-
-	#moveToEnd(key) {
-		let node = this.#nodeMap.get(key);
-		if (node) {
-			// Remove node from its current position
-			node.prev.next = node.next;
-			node.next.prev = node.prev;
-		} else {
-			// Create a new node if it doesn't exist
-			node = new ListNode(key);
-			this.#nodeMap.set(key, node);
-			if (this.#nodeMap.size > this.#limit) {
-				// Remove least recently used item
-				const lruKey = this.#head.next.key;
-				this.#nodeMap.delete(lruKey);
-				super.delete(lruKey);
-				this.#head.next = this.#head.next.next;
-				this.#head.next.prev = this.#head;
-			}
-		}
-		// Move node to the end
-		const lastNode = this.#tail.prev;
-		lastNode.next = node;
-		node.prev = lastNode;
-		node.next = this.#tail;
-		this.#tail.prev = node;
-	}
-
-	set(key, value, options = {}) {
-		this.#moveToEnd(key);
-		const { ttl, fetch } = { ...DEFAULT_OPTS, ...options };
-		const isFetch = fetch && typeof value === "function";
-		const evictable = options?.evictable ?? !isFetch;
-		const setter = fetch && typeof value === "function" ? value : () => value;
-		super.set(key, new CacheEntry(setter, ttl, evictable));
-		return this;
-	}
-
-	get(key, ...args) {
-		let value;
-		if (super.has(key)) {
-			this.#moveToEnd(key);
-			value = super.get(key);
-			const isExpired = value.isExpired();
-			if (isExpired && value.evictable) {
-				value = undefined;
-				this.evict(key, true);
-				this.#misses++;
-			} else {
-				value = value.getData(...args);
-				this.#hits++;
-			}
-		} else {
-			this.#misses++;
-		}
-		return value;
-	}
-
-	#delete(key) {
-		if (this.has(key)) {
-			super.delete(key);
-			const node = this.#nodeMap.get(key);
-			if (node) {
-				node.prev.next = node.next;
-				node.next.prev = node.prev;
-				this.#nodeMap.delete(key);
-			}
-		}		
-		return this;
-	}
-	evict(key, force=false) {
-		if (this.has(key)) {
-			const entry = super.get(key);
-			if (force || entry.evictable) {
-				this.#delete(key);
-			}			
-		}
-		return this;
-	}
-
-	reset(key, getter = null) {
-		if (this.has(key)) {
-			const entry = super.get(key);
-			entry.resetCache(getter);
-		}
-		return this;
-	}
-
-	clear() {
-		super.clear();
-		this.#head.next = this.#tail;
-		this.#tail.prev = this.#head;
-		this.#nodeMap.clear();
-		this.#hits = 0;
-		this.#misses = 0;
-		return this;
-	}
-
-	#evictExpiredItems() {
-		for (const [key, value] of super.entries()) {
-		  if (value.isExpired()) {
-			this.evict(key, value.evictable);
-		  }
-		}
-		return this;
-	}
-
-	get size() {
-		this.#evictExpiredItems();
-		return super.size;
-	}
-
-	stats() {
-		const totalRequests = this.#hits + this.#misses;
-		return {
-			size: this.size,
-			limit: this.#limit,
-			hits: this.#hits,
-			misses: this.#misses,
-			get hitRate() {
-				return totalRequests > 0 ? this.hits / totalRequests : 0;
-			},
-			get missRate() {
-				return totalRequests > 0 ? this.misses / totalRequests : 0;
-			}
-		};
-	}
 	static getInstance() {
-        if (!MemoryCache.#instance) {
-            MemoryCache.#instance = new MemoryCache(this.#id);
+		if (!MemoryCache.#instance) {
+			
+            MemoryCache.#instance = new MemoryCache();
         }
         return MemoryCache.#instance;
-	}
-	static newInstance() {
-        MemoryCache.#instance = new MemoryCache(this.#id);
-        return MemoryCache.#instance;
     }
+
+    #moveToEnd(key) {
+        let node = this.#nodeMap.get(key);
+        if (node) {
+            node.prev.next = node.next;
+            node.next.prev = node.prev;
+        } else {
+            node = new ListNode(key);
+            this.#nodeMap.set(key, node);
+            if (this.#nodeMap.size > this.#limit) {
+                const lruKey = this.#head.next.key;
+                this.#nodeMap.delete(lruKey);
+                this.#storage.delete(lruKey);
+                this.#head.next = this.#head.next.next;
+                this.#head.next.prev = this.#head;
+            }
+        }
+        const lastNode = this.#tail.prev;
+        lastNode.next = node;
+        node.prev = lastNode;
+        node.next = this.#tail;
+        this.#tail.prev = node;
+    }
+
+    get(key, ...args) {
+        let value = this.#storage.get(key);
+        if (value) {
+            this.#moveToEnd(key);
+            const isExpired = value.isExpired();
+            if (isExpired && value.evictable) {
+                value = undefined;
+                this.evict(key, true);
+                this.#misses++;
+            } else {
+                value = value.getData(...args);
+                this.#hits++;
+            }
+        } else {
+            this.#misses++;
+        }
+        return value;
+    }
+
+	set(key, value, options = {}) {
+        this.#moveToEnd(key);
+        const { ttl, fetch } = { ...DEFAULT_OPTS, ...options };
+        const isFetch = fetch && typeof value === "function";
+        const evictable = options?.evictable ?? !isFetch;
+        const setter = fetch && typeof value === "function" ? value : () => value;
+        this.#storage.set(key, new CacheEntry(setter, ttl, evictable));
+        return this;
+    }
+
+    has(key) {
+        return this.#storage.has(key);
+    }
+
+    evict(key, force = false) {
+        if (this.#storage.has(key)) {
+            const entry = this.#storage.get(key);
+            if (force || entry.evictable) {
+                this.#storage.delete(key);
+                const node = this.#nodeMap.get(key);
+                if (node) {
+                    node.prev.next = node.next;
+                    node.next.prev = node.prev;
+                    this.#nodeMap.delete(key);
+                }
+            }
+        }
+        return this;
+    }
+
+    reset(key, getter = null) {
+        if (this.#storage.has(key)) {
+            const entry = this.#storage.get(key);
+            entry.resetCache(getter);
+        }
+        return this;
+    }
+
+    clear() {
+        this.#storage.clear();
+        this.#head.next = this.#tail;
+        this.#tail.prev = this.#head;
+        this.#nodeMap.clear();
+        this.#hits = 0;
+        this.#misses = 0;
+        return this;
+    }
+
+	get size() {
+		this.#evictExpiredItems()
+        return this.#storage.size;
+    }
+
+	setLimit(limit) {		
+        this.#limit = limit > 0 ? limit : this.#limit;
+        while (this.size > this.#limit) {
+            const lruKey = this.#head.next.key;
+            this.evict(lruKey);
+        }
+        return this;
+    }
+
+    #evictExpiredItems() {
+        for (const [key, value] of this.#storage.entries()) {
+            if (value.isExpired()) {
+                this.evict(key, value.evictable);
+            }
+        }
+        return this;
+    }
+
+    stats() {
+        const totalRequests = this.#hits + this.#misses;
+        return {
+            size: this.size,
+            limit: this.#limit,
+            hits: this.#hits,
+            misses: this.#misses,
+            get hitRate() {
+                return totalRequests > 0 ? this.hits / totalRequests : 0;
+            },
+            get missRate() {
+                return totalRequests > 0 ? this.misses / totalRequests : 0;
+            }
+        };
+    }
+
+    *entries() {
+        for (const [key, cacheEntry] of this.#storage.entries()) {
+            if (cacheEntry.isExpired() && cacheEntry.evictable) {
+                this.#storage.delete(key);
+            } else {
+                yield [key, cacheEntry.getData()];
+            }
+        }
+    }
+
+    forEach(callback) {
+        for (const [key, value] of this.entries()) {
+            callback(value, key, this);
+        }
+    }
+
+    toObject() {
+        return Object.fromEntries(this.entries());
+    }
+
+    add(key, value, options = {}) {
+        if (!this.has(key)) {
+            this.set(key, value, options);
+        }
+        return this;
+    }
+	static newInstance() {
+        return new MemoryCache();
+	}
 }

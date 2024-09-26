@@ -11,9 +11,9 @@ console.assert(memoryCache.get('key2') === 'value2', 'Add failed');
 memoryCache.add('key2', 'value3');
 console.assert(memoryCache.get('key2') === 'value2', 'Add should not overwrite existing key');
 
-// Test delete
-memoryCache.delete('key1');
-console.assert(memoryCache.get('key1') === undefined, 'Delete failed');
+// Test eviction
+memoryCache.evict('key1', true);
+console.assert(memoryCache.get('key1') === undefined, 'Eviction failed');
 
 // Test clear
 memoryCache.clear();
