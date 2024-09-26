@@ -230,7 +230,6 @@ export default class MemoryCache extends Map {
 				this.#delete(key);
 			}			
 		}
-		this.#evictExpiredItems();
 		return this;
 	}
 
