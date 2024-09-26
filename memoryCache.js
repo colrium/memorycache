@@ -127,6 +127,16 @@ export default class MemoryCache extends Map {
 			}
 		}
 	}
+	*keys() {
+		for ([key] of this.entries()) {
+			yield key;
+		}
+	}
+	*values() {
+		for ([, value] of this.entries()) {
+			yield value;
+		}
+	}
 
 	forEach(callback) {
 		for (const [key, value] of this.entries()) {
