@@ -1,4 +1,5 @@
-import memoryCache from './memoryCache.js';
+import MemoryCache from './memoryCache.js';
+const memoryCache = MemoryCache.getInstance();
 
 // Test forEach method
 function testForEach() {

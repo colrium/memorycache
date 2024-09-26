@@ -84,15 +84,20 @@ class CacheEntry {
  * Memory cache implementation with LRU eviction policy
  * @extends Map
  */
-class MemoryCache extends Map {
+export default class MemoryCache extends Map {
 	#head;
 	#tail;
 	#nodeMap;
 	#limit;
 	#hits;
 	#misses;
+	static #instance;
+	static #id = Symbol("MemoryCache");
 
-	constructor() {
+	constructor(id=Symbol()) {
+		if (MemoryCache.#instance && id !== MemoryCache.#id) {
+            return MemoryCache.#instance;
+        }
 		super();
 		this.#limit = 100000;
 		this.#hits = 0;
@@ -144,7 +149,7 @@ class MemoryCache extends Map {
 		this.#limit = limit > 0 ? limit : this.#limit;
 		while (this.size > this.#limit) {
 			const lruKey = this.#head.next.key;
-			this.delete(lruKey);
+			this.#delete(lruKey);
 		}
 		return this;
 	}
@@ -194,7 +199,7 @@ class MemoryCache extends Map {
 			const isExpired = value.isExpired();
 			if (isExpired && value.evictable) {
 				value = undefined;
-				this.delete(key);
+				this.evict(key, true);
 				this.#misses++;
 			} else {
 				value = value.getData(...args);
@@ -206,13 +211,24 @@ class MemoryCache extends Map {
 		return value;
 	}
 
-	delete(key) {
-		super.delete(key);
-		const node = this.#nodeMap.get(key);
-		if (node) {
-			node.prev.next = node.next;
-			node.next.prev = node.prev;
-			this.#nodeMap.delete(key);
+	#delete(key) {
+		if (this.has(key)) {
+			super.delete(key);
+			const node = this.#nodeMap.get(key);
+			if (node) {
+				node.prev.next = node.next;
+				node.next.prev = node.prev;
+				this.#nodeMap.delete(key);
+			}
+		}		
+		return this;
+	}
+	evict(key, force=false) {
+		if (this.has(key)) {
+			const entry = super.get(key);
+			if (force || entry.evictable) {
+				this.#delete(key);
+			}			
 		}
 		return this;
 	}
@@ -236,15 +252,13 @@ class MemoryCache extends Map {
 	}
 
 	#evictExpiredItems() {
-		const now = new Date().getTime();
 		for (const [key, value] of super.entries()) {
-		  if (value.isExpired() &&  value.evictable) {
-			this.delete(key);
+		  if (value.isExpired()) {
+			this.evict(key, value.evictable);
 		  }
 		}
 		return this;
 	}
-	
 
 	get size() {
 		this.#evictExpiredItems();
@@ -266,9 +280,14 @@ class MemoryCache extends Map {
 			}
 		};
 	}
-}/**
- * Singleton instance of MemoryCache
- */
-const memoryCache = new MemoryCache();
-
-export default memoryCache;
+	static getInstance() {
+        if (!MemoryCache.#instance) {
+            MemoryCache.#instance = new MemoryCache(this.#id);
+        }
+        return MemoryCache.#instance;
+	}
+	static newInstance() {
+        MemoryCache.#instance = new MemoryCache(this.#id);
+        return MemoryCache.#instance;
+    }
+}
