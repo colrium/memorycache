@@ -21,22 +21,25 @@ function testSizeWithTTl() {
     memoryCache.set("key6", () => "value6", { ttl: 4000 });
 	memoryCache.set("key7", () => "value7", { ttl: 2000, evictable: false });
     setTimeout(() => {
-        console.log('memoryCache key4, key6 and non-evictable key7 remain after key5 expires', memoryCache);
+        console.log('memoryCache key4, key6 and non-evictable key7 remain after key5 expires', memoryCache.keys());
 		console.assert(memoryCache.size === 3  , "key4 and key6 should remain after key5 expires");
-        setTimeout(() => {
-			console.log('memoryCache key4 and non-evictable key7 remain after key6 expires', memoryCache);
-			console.assert(memoryCache.size === 2, "key4 and non-evictable key7 should remain after key5 expires");
-			setTimeout(() => {
-				console.log('memoryCache non-evictable key7 should remain after all entries expire', memoryCache);
-				console.assert(memoryCache.size === 1, "non-evictable key7 should remain after all entries expire");
-				memoryCache.evict("key7", true);
-				console.log('Cache should be empty after all items expire', memoryCache);
-				console.assert(memoryCache.size === 0, "Cache should be empty after all items expire");
-                console.log("All size tests completed!");
-			}, 7000);
-		}, 3000);
-	}, 1000);
-    
+        
+	}, 1500);
+    setTimeout(() => {
+		console.log('memoryCache key4 and non-evictable key7 remain after key6 expires', memoryCache.keys());
+		console.assert(memoryCache.size === 2, "key4 and non-evictable key7 should remain after key6 expires");		
+	}, 4500);
+	setTimeout(() => {
+		memoryCache.evict("key7", true);
+		console.log('memoryCache  key4 should remain after forcefully evicting key7', memoryCache.keys());
+		console.assert(memoryCache.size === 1, "key4 should remain after forcefully evicting key7");
+		
+	}, 7000);
+	setTimeout(() => {
+		console.log('Cache should be empty after all items evicted', memoryCache.keys());
+		console.assert(memoryCache.size === 0, "Cache should be empty after all items expire");
+		console.log("All size tests completed!");
+	}, 10500);
 }
 
 testSizeWithTTl();
