@@ -83,7 +83,7 @@ class CacheEntry {
 /**
  * Memory cache implementation with LRU eviction policy
  */
-export default class MemoryCache {
+class MemoryCache {
 	#storage;
 	#head;
 	#tail;
@@ -92,11 +92,10 @@ export default class MemoryCache {
 	#hits;
 	#misses;
 	static #instance;
-	static #id = Symbol("MemoryCache");
-	
+	static #_id = Symbol("MemoryCache");
 
-	constructor(id=Symbol()) {
-		if (MemoryCache.#instance && id !== MemoryCache.#id) {
+	constructor(id = Symbol()) {
+		if (MemoryCache.#instance && id === MemoryCache.#_id) {
             return MemoryCache.#instance;
         }
 		this.#storage = new Map();
@@ -108,16 +107,17 @@ export default class MemoryCache {
 		this.#head.next = this.#tail;
 		this.#tail.prev = this.#head;
 		this.#nodeMap = new Map(); // Map to store key-node pairs
-		
+		this.id = id; // ID to differentiate instances
 	}
-
 	static getInstance() {
-		if (!MemoryCache.#instance) {
-			
-            MemoryCache.#instance = new MemoryCache();
+		if (!MemoryCache.#instance) {			
+            MemoryCache.#instance = new MemoryCache(MemoryCache.#_id);
         }
         return MemoryCache.#instance;
-    }
+	}
+	static newInstance() {
+        return new MemoryCache();
+	}
 
     #moveToEnd(key) {
         let node = this.#nodeMap.get(key);
@@ -280,7 +280,7 @@ export default class MemoryCache {
         }
         return this;
     }
-	static newInstance() {
-        return new MemoryCache();
-	}
+	
 }
+MemoryCache.getInstance();
+export default MemoryCache;
