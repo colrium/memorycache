@@ -8,6 +8,6 @@ console.assert(memoryCache !== newInstance, "New instance should be different fr
 newInstance.set("key", "value");
 console.assert(memoryCache.get("key") === undefined, "Values should not be shared between instances");
 
-console.log("memoryCache id:", memoryCache.id);
-console.log("newInstance id:", newInstance.id);
+console.log("memoryCache id:", memoryCache);
+console.log("newInstance id:", newInstance);
 console.log("Equal ids:", memoryCache.id === newInstance.id);

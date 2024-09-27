@@ -25,14 +25,14 @@ class CacheEntry {
 		this.cache = null;
 		this.isFetched = false;
 		this.evictable = evictable;
-		this.fetchDate = new Date();
+		this.fetchDate = new Date(0);
 	}
 
 	/**
 	 * Checks if the cache entry has expired
 	 * @returns {boolean}
 	 */
-	isExpired() {
+	get stale() {
 		return this.fetchDate.getTime() + this.msToLive < new Date().getTime();
 	}
 
@@ -52,7 +52,7 @@ class CacheEntry {
 	 * @returns {any|Promise<any>}
 	 */
 	getData(...args) {
-		if (this.isExpired() || !this.isFetched) {
+		if (this.stale || !this.isFetched) {
 			this.isFetched = true;
 			if (this.isAsynchronous()) {
 				return this.fetchFunction(...args).then((results) => {
@@ -160,8 +160,7 @@ class MemoryCache {
         let value = this.#storage.get(key);
         if (value) {
             this.#moveToEnd(key);
-            const isExpired = value.isExpired();
-            if (isExpired && value.evictable) {
+            if (value.stale && value.evictable) {
                 value = undefined;
                 this.evict(key, true);
                 this.#misses++;
@@ -256,7 +255,7 @@ class MemoryCache {
      * @returns {number} The number of items in the cache
      */
 	get size() {
-		this.#evictExpiredItems()
+		this.#prune()
         return this.#storage.size;
     }
 
@@ -279,9 +278,9 @@ class MemoryCache {
      * @returns {MemoryCache} The cache instance
      * @private
      */
-	#evictExpiredItems() {
+	#prune() {
         for (const [key, value] of this.#storage.entries()) {
-			if (value.isExpired()) {
+			if (value.stale) {
 				this.evict(key, value.evictable);
             }
         }
@@ -313,7 +312,7 @@ class MemoryCache {
      * @yields {Array} Key-value pairs of cache entries
      */
 	*entries() {
-		this.#evictExpiredItems();
+		this.#prune();
         for (const [key, cacheEntry] of this.#storage.entries()) {
 			yield [key, cacheEntry.getData()];	
         }
@@ -369,7 +368,9 @@ class MemoryCache {
             this.set(key, value, options);
         }
         return this;
-    }
+	}
 	
 }
+
+
 export default MemoryCache;
