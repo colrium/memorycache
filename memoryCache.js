@@ -223,10 +223,10 @@ export default class MemoryCache {
         return this;
     }
 
-    #evictExpiredItems() {
+	#evictExpiredItems() {
         for (const [key, value] of this.#storage.entries()) {
-            if (value.isExpired()) {
-                this.evict(key, value.evictable);
+			if (value.isExpired()) {
+				this.evict(key, value.evictable);
             }
         }
         return this;
@@ -248,16 +248,22 @@ export default class MemoryCache {
         };
     }
 
-    *entries() {
+	*entries() {
+		this.#evictExpiredItems();
         for (const [key, cacheEntry] of this.#storage.entries()) {
-            if (cacheEntry.isExpired() && cacheEntry.evictable) {
-                this.#storage.delete(key);
-            } else {
-                yield [key, cacheEntry.getData()];
-            }
+			yield [key, cacheEntry.getData()];	
         }
     }
-
+	*keys() {
+		for ([key] of super.entries()) {
+			yield key;
+		}
+	}
+	*values() {
+		for ([, value] of super.entries()) {
+			yield value.getData();
+		}
+	}
     forEach(callback) {
         for (const [key, value] of this.entries()) {
             callback(value, key, this);

@@ -36,12 +36,12 @@ function testSizeWithTTl() {
 		memoryCache.evict("key7", true);
 
 		memoryCache.get('key6')
-		console.log('memoryCache  key4 should remain after forcefully evicting key7', memoryCache.toObject());
+		console.log('memoryCache  key4 should remain after forcefully evicting key7', memoryCache.keys());
 		console.assert(memoryCache.size === 1, "key4 should remain after forcefully evicting key7");
 		
 	}, 7000);
 	setTimeout(() => {
-		console.log('Cache should be empty after all items evicted', memoryCache.toObject());
+		console.log('Cache should be empty after all items evicted', memoryCache.keys());
 		console.assert(memoryCache.size === 0, "Cache should be empty after all items expire");
 		console.log("All size tests completed!");
 	}, 10500);
