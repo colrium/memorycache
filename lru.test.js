@@ -1,4 +1,5 @@
-import memoryCache from './memoryCache.js';
+import MemoryCache from './memoryCache.js';
+const memoryCache = MemoryCache.getInstance();
 
 function testLRU() {
   console.log('Testing LRU functionality:');
@@ -12,14 +13,14 @@ function testLRU() {
   memoryCache.set('key3', 'value3');
   memoryCache.set('key4', 'value4');
 
-	console.log("Items:", memoryCache.entries());
+	console.log("Items:", memoryCache.toObject());
   console.assert(!memoryCache.has('key1'), 'Oldest item (key1) should be evicted');
   console.assert(memoryCache.has('key2') && memoryCache.has('key3') && memoryCache.has('key4'), 'Newer items should remain in cache');
 
   // Test 2: Accessing an item updates its position
   memoryCache.get('key2');
   memoryCache.set('key5', 'value5');
-
+	console.log("Items:", memoryCache.toObject());
   console.assert(!memoryCache.has('key3'), 'key3 should be evicted after accessing key2');
   console.assert(memoryCache.has('key2') && memoryCache.has('key4') && memoryCache.has('key5'), 'Accessed and newer items should remain in cache');
 

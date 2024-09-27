@@ -2,7 +2,7 @@ const minutesToLive = 2;
 const DEFAULT_OPTS = {
 	ttl: minutesToLive * 60 * 1000,
 	fetch: true,
-	evictable: false
+	evictable: true
 };
 
 class ListNode {
@@ -25,14 +25,14 @@ class CacheEntry {
 		this.cache = null;
 		this.isFetched = false;
 		this.evictable = evictable;
-		this.fetchDate = new Date();
+		this.fetchDate = new Date(0);
 	}
 
 	/**
 	 * Checks if the cache entry has expired
 	 * @returns {boolean}
 	 */
-	isExpired() {
+	get stale() {
 		return this.fetchDate.getTime() + this.msToLive < new Date().getTime();
 	}
 
@@ -52,7 +52,7 @@ class CacheEntry {
 	 * @returns {any|Promise<any>}
 	 */
 	getData(...args) {
-		if (this.isExpired() || !this.isFetched) {
+		if (this.stale || !this.isFetched) {
 			this.isFetched = true;
 			if (this.isAsynchronous()) {
 				return this.fetchFunction(...args).then((results) => {
@@ -82,18 +82,26 @@ class CacheEntry {
 
 /**
  * Memory cache implementation with LRU eviction policy
- * @extends Map
+ * Stores cache entries in doubly linked list ordered by last access
+ * Implements LRU eviction policy where least recently used entries are evicted first
+ * Behaves like the native Map with additional cache features
  */
-class MemoryCache extends Map {
+class MemoryCache {
+	#storage;
 	#head;
 	#tail;
 	#nodeMap;
 	#limit;
 	#hits;
 	#misses;
+	static #instance;
+	static #_id = Symbol("MemoryCache");
 
-	constructor() {
-		super();
+	constructor(id = Symbol()) {
+		if (MemoryCache.#instance && id === MemoryCache.#_id) {
+            return MemoryCache.#instance;
+        }
+		this.#storage = new Map();
 		this.#limit = 100000;
 		this.#hits = 0;
 		this.#misses = 0;
@@ -102,173 +110,267 @@ class MemoryCache extends Map {
 		this.#head.next = this.#tail;
 		this.#tail.prev = this.#head;
 		this.#nodeMap = new Map(); // Map to store key-node pairs
+		this.id = id; // ID to differentiate instances
+	}
+	/**
+     * @returns {MemoryCache} The cache singleton instance
+     */
+	static getInstance() {
+		if (!MemoryCache.#instance) {			
+            MemoryCache.#instance = new MemoryCache(MemoryCache.#_id);
+        }
+        return MemoryCache.#instance;
 	}
 
+    /**
+     * Moves or adds a key to the end of the cache (most recently used)
+     * @param {string} key - The key to move or add
+     * @private
+     */
+    #moveToEnd(key) {
+        let node = this.#nodeMap.get(key);
+        if (node) {
+            node.prev.next = node.next;
+            node.next.prev = node.prev;
+        } else {
+            node = new ListNode(key);
+            this.#nodeMap.set(key, node);
+            if (this.#nodeMap.size > this.#limit) {
+                const lruKey = this.#head.next.key;
+                this.#nodeMap.delete(lruKey);
+                this.#storage.delete(lruKey);
+                this.#head.next = this.#head.next.next;
+                this.#head.next.prev = this.#head;
+            }
+        }
+        const lastNode = this.#tail.prev;
+        lastNode.next = node;
+        node.prev = lastNode;
+        node.next = this.#tail;
+        this.#tail.prev = node;
+    }
 
+    /**
+     * Retrieves a value from the cache
+     * @param {string} key - The key to retrieve
+     * @param {...any} args - Arguments to pass to the fetch function
+     * @returns {*} The cached value or undefined if not found
+     */
+    get(key, ...args) {
+        let value = this.#storage.get(key);
+        if (value) {
+            this.#moveToEnd(key);
+            if (value.stale && value.evictable) {
+                value = undefined;
+                this.evict(key, true);
+                this.#misses++;
+            } else {
+                value = value.getData(...args);
+                this.#hits++;
+            }
+        } else {
+            this.#misses++;
+        }
+        return value;
+    }
 
-	*entries() {
-		for (const [key, cacheEntry] of super.entries()) {
-			if (cacheEntry.isExpired() && cacheEntry.evictable) {
-				super.delete(key);
-			} else {
-				const node = new ListNode(key);
-				this.#nodeMap.set(key, node);
-				node.prev = this.#tail.prev;
-				node.next = this.#tail;
-				node.prev.next = node;
-				node.next.prev = node;
-				yield [key, cacheEntry.getData()];
-				
-			}
-		}
-	}
-
-	forEach(callback) {
-		for (const [key, value] of this.entries()) {
-			callback(value, key, this);
-		}
-	}
-
-	toObject() {
-		return Object.fromEntries(this.entries());
-	}
-
-	add(key, value, options = {}) {
-		if (!this.has(key)) {
-			this.set(key, value, options);
-		}
-		return this;
-	}
-
-	setLimit(limit) {
-		this.#limit = limit > 0 ? limit : this.#limit;
-		while (this.size > this.#limit) {
-			const lruKey = this.#head.next.key;
-			this.delete(lruKey);
-		}
-		return this;
-	}
-
-	#moveToEnd(key) {
-		let node = this.#nodeMap.get(key);
-		if (node) {
-			// Remove node from its current position
-			node.prev.next = node.next;
-			node.next.prev = node.prev;
-		} else {
-			// Create a new node if it doesn't exist
-			node = new ListNode(key);
-			this.#nodeMap.set(key, node);
-			if (this.#nodeMap.size > this.#limit) {
-				// Remove least recently used item
-				const lruKey = this.#head.next.key;
-				this.#nodeMap.delete(lruKey);
-				super.delete(lruKey);
-				this.#head.next = this.#head.next.next;
-				this.#head.next.prev = this.#head;
-			}
-		}
-		// Move node to the end
-		const lastNode = this.#tail.prev;
-		lastNode.next = node;
-		node.prev = lastNode;
-		node.next = this.#tail;
-		this.#tail.prev = node;
-	}
-
+    /**
+     * Sets a value in the cache
+     * @param {string} key - The key to set
+     * @param {*} value - The value to cache
+     * @param {Object} [options={}] - Cache options
+     * @returns {MemoryCache} The cache instance
+     */
 	set(key, value, options = {}) {
-		this.#moveToEnd(key);
-		const { ttl, fetch } = { ...DEFAULT_OPTS, ...options };
-		const isFetch = fetch && typeof value === "function";
-		const evictable = options?.evictable ?? !isFetch;
-		const setter = fetch && typeof value === "function" ? value : () => value;
-		super.set(key, new CacheEntry(setter, ttl, evictable));
-		return this;
-	}
+        this.#moveToEnd(key);
+        const { ttl, fetch } = { ...DEFAULT_OPTS, ...options };
+        const isFetch = fetch && typeof value === "function";
+        const evictable = options?.evictable ?? !isFetch;
+        const setter = fetch && typeof value === "function" ? value : () => value;
+        this.#storage.set(key, new CacheEntry(setter, ttl, evictable));
+        return this;
+    }
 
-	get(key, ...args) {
-		let value;
-		if (super.has(key)) {
-			this.#moveToEnd(key);
-			value = super.get(key);
-			const isExpired = value.isExpired();
-			if (isExpired && value.evictable) {
-				value = undefined;
-				this.delete(key);
-				this.#misses++;
-			} else {
-				value = value.getData(...args);
-				this.#hits++;
-			}
-		} else {
-			this.#misses++;
+    /**
+     * Checks if a key exists in the cache
+     * @param {string} key - The key to check
+     * @returns {boolean} True if the key exists, false otherwise
+     */
+    has(key) {
+        return this.#storage.has(key);
+    }
+
+    /**
+     * Evicts a key from the cache
+     * @param {string} key - The key to evict
+     * @param {boolean} [force=false] - Force eviction even if not evictable
+     * @returns {MemoryCache} The cache instance
+     */
+    evict(key, force = false) {
+        if (this.#storage.has(key)) {
+            const entry = this.#storage.get(key);
+            if (force || entry.evictable) {
+                this.#storage.delete(key);
+                const node = this.#nodeMap.get(key);
+                if (node) {
+                    node.prev.next = node.next;
+                    node.next.prev = node.prev;
+                    this.#nodeMap.delete(key);
+                }
+            }
+        }
+        return this;
+    }
+
+    /**
+     * Resets a cache entry
+     * @param {string} key - The key to reset
+     * @param {Function} [getter=null] - New getter function
+     * @returns {MemoryCache} The cache instance
+     */
+    reset(key, getter = null) {
+        if (this.#storage.has(key)) {
+            const entry = this.#storage.get(key);
+            entry.resetCache(getter);
+        }
+        return this;
+    }
+
+    /**
+     * Clears the entire cache
+     * @returns {MemoryCache} The cache instance
+     */
+    clear() {
+        this.#storage.clear();
+        this.#head.next = this.#tail;
+        this.#tail.prev = this.#head;
+        this.#nodeMap.clear();
+        this.#hits = 0;
+        this.#misses = 0;
+        return this;
+    }
+
+    /**
+     * Gets the current size of the cache
+     * @returns {number} The number of items in the cache
+     */
+	get size() {
+		this.#prune()
+        return this.#storage.size;
+    }
+
+    /**
+     * Sets the maximum size limit of the cache
+     * @param {number} limit - The new size limit
+     * @returns {MemoryCache} The cache instance
+     */
+	setLimit(limit) {		
+        this.#limit = limit > 0 ? limit : this.#limit;
+        while (this.size > this.#limit) {
+            const lruKey = this.#head.next.key;
+            this.evict(lruKey);
+        }
+        return this;
+    }
+
+    /**
+     * Removes expired items from the cache
+     * @returns {MemoryCache} The cache instance
+     * @private
+     */
+	#prune() {
+        for (const [key, value] of this.#storage.entries()) {
+			if (value.stale) {
+				this.evict(key, value.evictable);
+            }
+        }
+        return this;
+    }
+
+    /**
+     * Returns cache statistics
+     * @returns {Object} An object containing cache stats
+     */
+    stats() {
+        const totalRequests = this.#hits + this.#misses;
+        return {
+            size: this.size,
+            limit: this.#limit,
+            hits: this.#hits,
+            misses: this.#misses,
+            get hitRate() {
+                return totalRequests > 0 ? this.hits / totalRequests : 0;
+            },
+            get missRate() {
+                return totalRequests > 0 ? this.misses / totalRequests : 0;
+            }
+        };
+    }
+
+    /**
+     * Returns an iterator for cache entries
+     * @yields {Array} Key-value pairs of cache entries
+     */
+	*entries() {
+		this.#prune();
+        for (const [key, cacheEntry] of this.#storage.entries()) {
+			yield [key, cacheEntry.getData()];	
+        }
+    }
+
+    /**
+     * Returns an iterator for cache keys
+     * @yields {string} Cache keys
+     */
+	*keys() {
+		for ([key] of super.entries()) {
+			yield key;
 		}
-		return value;
 	}
 
-	delete(key) {
-		super.delete(key);
-		const node = this.#nodeMap.get(key);
-		if (node) {
-			node.prev.next = node.next;
-			node.next.prev = node.prev;
-			this.#nodeMap.delete(key);
+    /**
+     * Returns an iterator for cache values
+     * @yields {*} Cache values
+     */
+	*values() {
+		for ([, value] of super.entries()) {
+			yield value.getData();
 		}
-		return this;
 	}
 
-	reset(key, getter = null) {
-		if (this.has(key)) {
-			const entry = super.get(key);
-			entry.resetCache(getter);
-		}
-		return this;
-	}
+    /**
+     * Executes a callback for each cache entry
+     * @param {Function} callback - Function to execute for each entry
+     */
+    forEach(callback) {
+        for (const [key, value] of this.entries()) {
+            callback(value, key, this);
+        }
+    }
 
-	clear() {
-		super.clear();
-		this.#head.next = this.#tail;
-		this.#tail.prev = this.#head;
-		this.#nodeMap.clear();
-		this.#hits = 0;
-		this.#misses = 0;
-		return this;
-	}
+    /**
+     * Converts the cache to a plain object
+     * @returns {Object} An object representation of the cache
+     */
+    toObject() {
+        return Object.fromEntries(this.entries());
+    }
 
-	#evictExpiredItems() {
-		const now = new Date().getTime();
-		for (const [key, value] of super.entries()) {
-		  if (value.isExpired() &&  value.evictable) {
-			this.delete(key);
-		  }
-		}
-		return this;
+    /**
+     * Adds a new key-value pair if the key doesn't exist
+     * @param {string} key - The key to add
+     * @param {*} value - The value to cache
+     * @param {Object} [options={}] - Cache options
+     * @returns {MemoryCache} The cache instance
+     */
+    add(key, value, options = {}) {
+        if (!this.has(key)) {
+            this.set(key, value, options);
+        }
+        return this;
 	}
 	
+}
 
-	get size() {
-		this.#evictExpiredItems();
-		return super.size;
-	}
 
-	stats() {
-		const totalRequests = this.#hits + this.#misses;
-		return {
-			size: this.size,
-			limit: this.#limit,
-			hits: this.#hits,
-			misses: this.#misses,
-			get hitRate() {
-				return totalRequests > 0 ? this.hits / totalRequests : 0;
-			},
-			get missRate() {
-				return totalRequests > 0 ? this.misses / totalRequests : 0;
-			}
-		};
-	}
-}/**
- * Singleton instance of MemoryCache
- */
-const memoryCache = new MemoryCache();
-
-export default memoryCache;
+export default MemoryCache;

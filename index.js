@@ -1,4 +1,5 @@
-import cache from "./memoryCache.js";
+import MemoryCache from "./memoryCache.js";
+const cache = MemoryCache.getInstance();
 
 cache.set("hello-world", "Hello World!");
 console.log(cache.get("hello-world"));
@@ -17,9 +18,9 @@ async function runTests() {
   cache.set('key1', 'value2');
   console.log('Test overwrite:', cache.get('key1') === 'value2' ? 'PASS' : 'FAIL');
 
-  // Test delete
-  cache.delete('key1');
-  console.log('Test delete:', cache.get('key1') === undefined ? 'PASS' : 'FAIL');
+  // Test evict
+  cache.evict('key1');
+  console.log('Test evict:', cache.get('key1') === undefined ? 'PASS' : 'FAIL');
 
   // Test clear
   cache.set('key1', 'value1');
