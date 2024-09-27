@@ -115,9 +115,6 @@ class MemoryCache {
         }
         return MemoryCache.#instance;
 	}
-	static newInstance() {
-        return new MemoryCache();
-	}
 
     #moveToEnd(key) {
         let node = this.#nodeMap.get(key);
