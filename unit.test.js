@@ -1,4 +1,4 @@
-import MemoryCache from './memoryCache.js';
+import MemoryCache from './index.js';
 const memoryCache = MemoryCache.getInstance();
 
 // Test set and get

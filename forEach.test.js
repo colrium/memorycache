@@ -1,8 +1,14 @@
-import MemoryCache from './memoryCache.js';
+import MemoryCache from './index.js';
 const memoryCache = MemoryCache.getInstance();
-
+const map = new Map([
+	[1, "one"],
+	[2, "two"],
+	[3, "three"]
+]);
+console.log('map', map.size)
 // Test forEach method
 function testForEach() {
+  console.log('arguments', arguments)
   memoryCache.clear();
 
   // Test 1: Iterate over multiple entries
@@ -15,16 +21,21 @@ function testForEach() {
   memoryCache.forEach((value, key, cache) => {
     count++;
     values.push(value);
-    console.assert(cache === memoryCache, 'Cache reference is correct');
+    console.log(value, key);
+    console.assert(cache === memoryCache, 'Cache reference is incorrect');
   });
-
-  console.assert(count === 3, 'forEach iterates over all entries');
-  console.assert(JSON.stringify(values) === JSON.stringify(['value1', 'value2', 'value3']), 'forEach iterates in correct order');
+  console.log('count', count)
+  console.log('memoryCache', memoryCache)
+  console.assert(count === 3, 'forEach did not iterate over all entries');
+  console.assert(JSON.stringify(values) === JSON.stringify(['value1', 'value2', 'value3']), 'forEach iterates in wrong order');
 
   // Test 2: Empty cache
   memoryCache.clear();
   let emptyCount = 0;
-  memoryCache.forEach(() => emptyCount++);
+  memoryCache.forEach((entry) => {
+    console.log(entry);
+    emptyCount++;
+  });
   console.assert(emptyCount === 0, 'forEach does not iterate on empty cache');
 
   // Test 3: Function values

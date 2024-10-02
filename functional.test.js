@@ -1,4 +1,4 @@
-import MemoryCache from './memoryCache.js';
+import MemoryCache from './index.js';
 const memoryCache = MemoryCache.getInstance();
 
 function testEntries() {
@@ -37,8 +37,8 @@ function testEntries() {
   memoryCache.get('key1'); // Move key1 to the end
 
     const orderedEntries = Array.from(memoryCache.entries());
-	console.log("orderedEntries", orderedEntries);
-  console.assert(JSON.stringify(orderedEntries) === JSON.stringify([['key2', 'value2'], ['key3', 'value3'], ['key1', 'value1']]), 'entries respects LRU order');
+	console.log("orderedEntries", JSON.stringify(orderedEntries));
+  console.assert(JSON.stringify(orderedEntries) === JSON.stringify([['key2', 'value2'], ['key3', 'value3'], ['key1', 'value1']]), `entries does not respects LRU order`);
 
   // Test 5: Expired entries
   memoryCache.clear();
